@@ -69,10 +69,10 @@
 
 			if ( sCommand == 'load' ) {
 				if ( sParameter.substring( 0, 5 ) == 'this.' ) {
-					$.proxy( this[sParameter.substr( 5 )], scope ).call();
+					$.proxy( this[sParameter.substr( 5 )], scope ).apply( scope, $oElement );
 				}
 				else {
-					$.proxy( window[sParameter], scope ).call();
+					$.proxy( window[sParameter], scope ).apply( scope, $oElement );
 				}
 			}
 			else {
@@ -120,6 +120,24 @@
 					break;
 				}
 			}
+			return this;
+		};
+
+		/**
+		 * @param sEventName
+		 * @returns {Deckard}
+		 */
+		this.broadcast = function ( sEventName ) {
+			$( 'div.deckard[data-deckard-listener^="'+sEventName+':"]' ).each(
+				function ( oElement, nIndex ) {
+					var $oElement = $( this );
+					var oDeckard = $oElement.data( 'plugin-' + sPluginName );
+					var aAction = $oElement.attr( 'data-deckard-listener' ).split( ':' );
+					if ( aAction[1] ) {
+						oDeckard[aAction[1]]();
+					}
+				}
+			);
 			return this;
 		};
 
@@ -208,7 +226,7 @@
 						//Utilities.loadScriptTags( oData );
 
 						// TODO: Here we need to analyse the data returned and save reference to the new card
-						$oNewKard.find( 'a[data-kard-action],button[data-kard-action]' ).each(
+						$oNewKard.find( 'a[data-kard-action],button[data-kard-action],input[data-kard-action]' ).each(
 							function ( arg1, arg2 ) {
 								oInstance.applyKardActions( this );
 							}
@@ -266,6 +284,15 @@
 		 */
 		this.setLoadData = function( oLoadData ) {
 			this.oLoadData = oLoadData;
+			return this;
+		};
+
+		/**
+		 * @returns {Deckard}
+		 */
+		this.setLoadDataFromElement = function( $oElement ) {
+			this.oLoadData = $( '<form />' ).append( $oElement.clone() ).serializeArray();
+			console.log( this.oLoadData );
 			return this;
 		};
 
