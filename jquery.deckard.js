@@ -142,31 +142,35 @@
 		};
 
 		/**
-		 * Using only a url component
 		 * @param sUrlComponent
-		 * @param sName
+		 * @returns {boolean}
+		 */
+		this.has = function ( sUrlComponent ) {
+			return ( this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' ).length > 0 );
+		};
+
+		/**
+		 * @param sUrlComponent
+		 * @param bReload
 		 * @returns {Deckard}
 		 */
-		this.load = function ( sUrlComponent, sName ) {
+		this.load = function ( sUrlComponent, bReload ) {
 			var oInstance = this;
 
 			this.options.onBeforeLoad.call( this );
 			// if the pack is empty and there is a default specified, use that
 
-			// Look for an already loaded card with the same URI
-			// here we could store cards internally
-			var $oMatchingKard = this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' );
+			if ( !bReload ) {
+				// Look for an already loaded card with the same URI
+				// here we could store cards internally
+				var $oMatchingKard = this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' );
 
-			// If we fail to find a card via the URI, we try then via the name
-			if ( !$oMatchingKard.length && sName ) {
-				$oMatchingKard = this.$oPack.find( 'div[data-kard-name="'+sName+'"]' );
-			}
-
-			// if the URI is matched on a pre-existing/loaded kard, then we simply display that card
-			// and then return immediately
-			if ( $oMatchingKard.length ) {
-				this.stackKard( this.activeCard );
-				return this.show( $oMatchingKard );
+				// if the URI is matched on a pre-existing/loaded kard, then we simply display that card
+				// and then return immediately
+				if ( $oMatchingKard.length ) {
+					this.stackKard( this.activeCard );
+					return this.show( $oMatchingKard );
+				}
 			}
 
 			this.activeCard = this.$oPack.find( '.kard:not(.hidden)' );
@@ -208,19 +212,26 @@
 	//
 						var $oNewKard = $( sCardContent );
 
-						// Remove any kards with the same name in this pack
+						// Find the actual "div.kard"'s within the new content
 						var $oKards = $oNewKard.hasClass( 'kard' )? $oNewKard: $( 'div.kard', $oNewKard );
+
+						// Set the kard-uri for those that don't have one
+						if ( !$oKards.attr( 'data-kard-uri' ) ) {
+							$oKards.attr( 'data-kard-uri', sUrlComponent );
+						}
+
+						// Remove any kards with an identical name
 						var sNewKardName = $oKards.data( 'kard-name' );
 						if ( sNewKardName ) {
+							// we should probably replace the position in the stack?
 							this.$oPack.find('div[data-kard-name="' + sNewKardName + '"]').remove();
 						}
 
+						// Keep a hold of the current active card
 						var $oActiveCard = this.activeCard;
 
+						// Append the new content to the pack
 						$oNewKard.appendTo( this.$oPack );
-						if ( !$oNewKard.attr( 'data-kard-uri' ) ) {
-							$oNewKard.attr( 'data-kard-uri', sUrlComponent );
-						}
 
 						Utilities.applyScript( sScript );
 						//Utilities.loadScriptTags( oData );
@@ -259,6 +270,15 @@
 
 			$.ajax( oRequest );
 
+			return this;
+		};
+
+		/**
+		 * @param sUrlComponent
+		 * @returns {boolean}
+		 */
+		this.reload = function( sUrlComponent ) {
+			this.load( sUrlComponent, true );
 			return this;
 		};
 
