@@ -12,11 +12,18 @@
 
 	var oDefaults = {
 		'onBeforeBack': function() {},
+		'onBeforeBroadcast': function() {},
 		'onBeforeLoad': function() {},
 		'onAfterLoad': function () {},
+		'onLoadJson': function( oData ) {
+			console.log( 'onLoadJson' );
+			console.log( oData );
+			notify( 'Error', oData.message, 'growl-error' );
+		},
 		'onMask': function() {},
 		'onUnmask': function() {},
 		'onTransformUrlComponent': function( sUrlComponent ) {
+			// this line alone will break this plugin for anyone else
 			return site_url( sUrlComponent );
 		}
 	};
@@ -47,6 +54,7 @@
 		this._defaults = oDefaults;
 		this._name = sPluginName;
 
+		this.sDefaultKard = '';
 		this.aKardStack = [];
 		this.oLoadData = {};
 		this.oLoadMethod = 'GET';
@@ -112,14 +120,21 @@
 		this.back = function () {
 			this.options.onBeforeBack.call( this );
 
+			// Try to find the first existing previous kard
 			while ( this.aKardStack.length > 0 ) {
 				var sName = this.aKardStack.pop();
 				var $oMatchingKards = this.$oPack.find( 'div.kard[data-kard-name="'+sName+'"]' );
 				if ( $oMatchingKards.length > 0 ) {
 					this.show( $oMatchingKards.first() );
-					break;
+					return this;
 				}
 			}
+
+			// If we couldn't find a kard to go back to, then we just load the default kard
+			if ( !this.aKardStack.length && this.sDefaultKard ) {
+				this.load( this.sDefaultKard, true );
+			}
+
 			return this;
 		};
 
@@ -128,6 +143,8 @@
 		 * @returns {Deckard}
 		 */
 		this.broadcast = function ( sEventName ) {
+			this.options.onBeforeBroadcast.call( this );
+
 			$( 'div.deckard[data-deckard-listener^="'+sEventName+':"]' ).each(
 				function ( oElement, nIndex ) {
 					var $oElement = $( this );
@@ -142,31 +159,48 @@
 		};
 
 		/**
-		 * Using only a url component
+		 * @returns {string}
+		 */
+		this.getDefaultKard = function () {
+			return this.sDefaultKard;
+		};
+
+		/**
 		 * @param sUrlComponent
-		 * @param sName
+		 * @returns {boolean}
+		 */
+		this.has = function ( sUrlComponent ) {
+			return ( this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' ).length > 0 );
+		};
+
+		/**
+		 * @param sUrlComponent
+		 * @param bReload
 		 * @returns {Deckard}
 		 */
-		this.load = function ( sUrlComponent, sName ) {
-			var oInstance = this;
-
+		this.load = function ( sUrlComponent, bReload ) {
 			this.options.onBeforeLoad.call( this );
-			// if the pack is empty and there is a default specified, use that
 
-			// Look for an already loaded card with the same URI
-			// here we could store cards internally
-			var $oMatchingKard = this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' );
-
-			// If we fail to find a card via the URI, we try then via the name
-			if ( !$oMatchingKard.length && sName ) {
-				$oMatchingKard = this.$oPack.find( 'div[data-kard-name="'+sName+'"]' );
+			// Ensure we have a valid url component
+			if ( sUrlComponent == '' ) {
+				return this;
 			}
 
-			// if the URI is matched on a pre-existing/loaded kard, then we simply display that card
-			// and then return immediately
-			if ( $oMatchingKard.length ) {
-				this.stackKard( this.activeCard );
-				return this.show( $oMatchingKard );
+			// todo: if the pack is empty and there is a default specified, use that
+
+			var oInstance = this;
+
+			if ( !bReload ) {
+				// Look for an already loaded card with the same URI
+				// here we could store cards internally
+				var $oMatchingKard = this.$oPack.find( 'div[data-kard-uri="'+sUrlComponent+'"]' );
+
+				// if the URI is matched on a pre-existing/loaded kard, then we simply display that card
+				// and then return immediately
+				if ( $oMatchingKard.length ) {
+					this.stackKard( this.activeCard );
+					return this.show( $oMatchingKard );
+				}
 			}
 
 			this.activeCard = this.$oPack.find( '.kard:not(.hidden)' );
@@ -194,8 +228,7 @@
 
 					if ( bIsJson ) {
 						// could do an onError handler
-						oData = jQuery.parseJSON( oData );
-						notify( 'Error', oData.message, 'growl-error' );
+						this.options.onLoadJson.call( this, jQuery.parseJSON( oData ) );
 					}
 					else {
 						var sCardContent = Utilities.extractScriptTags( oData );
@@ -208,19 +241,26 @@
 	//
 						var $oNewKard = $( sCardContent );
 
-						// Remove any kards with the same name in this pack
+						// Find the actual "div.kard"'s within the new content
 						var $oKards = $oNewKard.hasClass( 'kard' )? $oNewKard: $( 'div.kard', $oNewKard );
+
+						// Set the kard-uri for those that don't have one
+						if ( !$oKards.attr( 'data-kard-uri' ) ) {
+							$oKards.attr( 'data-kard-uri', sUrlComponent );
+						}
+
+						// Remove any kards with an identical name
 						var sNewKardName = $oKards.data( 'kard-name' );
 						if ( sNewKardName ) {
+							// we should probably replace the position in the stack?
 							this.$oPack.find('div[data-kard-name="' + sNewKardName + '"]').remove();
 						}
 
+						// Keep a hold of the current active card
 						var $oActiveCard = this.activeCard;
 
+						// Append the new content to the pack
 						$oNewKard.appendTo( this.$oPack );
-						if ( !$oNewKard.attr( 'data-kard-uri' ) ) {
-							$oNewKard.attr( 'data-kard-uri', sUrlComponent );
-						}
 
 						Utilities.applyScript( sScript );
 						//Utilities.loadScriptTags( oData );
@@ -263,6 +303,15 @@
 		};
 
 		/**
+		 * @param sUrlComponent
+		 * @returns {boolean}
+		 */
+		this.reload = function( sUrlComponent ) {
+			this.load( sUrlComponent, true );
+			return this;
+		};
+
+		/**
 		 * @returns {Deckard}
 		 */
 		this.removeAll = function() {
@@ -277,6 +326,26 @@
 			this.removeAll();
 			this.init();
 			return this;
+		};
+
+		/**
+		 * @param sUrlComponent
+		 * @returns {Deckard}
+		 */
+		this.setDefaultKard = function( sUrlComponent ) {
+			this.sDefaultKard = sUrlComponent;
+			return this;
+		};
+
+		/**
+		 * @param sEvent
+		 * @param cCallable
+		 * @returns {function}
+		 */
+		this.setEventHandler = function( sEvent, cCallable ) {
+			var cPrevious = this.options[sEvent];
+			this.options[sEvent] = cCallable;
+			return cPrevious;
 		};
 
 		/**
@@ -354,7 +423,8 @@
 			var $oThis = $( this.element );
 
 			if ( $oThis.data( 'deckard-default-kard' ) ) {
-				this.load( $oThis.data( 'deckard-default-kard' ) );
+				this.setDefaultKard( $oThis.data( 'deckard-default-kard' ) );
+				this.load( this.getDefaultKard() );
 			}
 		}
 	};
