@@ -8,16 +8,24 @@
  */
 ;( function ( $, window, document, undefined ) {
 
+	// Private function for debugging.
+	var debug = function( obj ) {
+		if ( window.console && window.console.log ) {
+			window.console.log( obj );
+		}
+	};
+
 	var sPluginName = 'deckard';
 
 	var oDefaults = {
+		'onAfterBroadcast': function () {},
+		'onAfterLoad': function () {},
 		'onBeforeBack': function() {},
 		'onBeforeBroadcast': function() {},
 		'onBeforeLoad': function() {},
-		'onAfterLoad': function () {},
 		'onLoadJson': function( oData ) {
-			console.log( 'onLoadJson' );
-			console.log( oData );
+			debug( 'onLoadJson' );
+			debug( oData );
 			notify( 'Error', oData.message, 'growl-error' );
 		},
 		'onMask': function() {},
@@ -28,13 +36,6 @@
 		}
 	};
 
-	// Private function for debugging.
-	var debug = function( obj ) {
-		if ( window.console && window.console.log ) {
-			window.console.log( obj );
-		}
-	};
-
 	/**
 	 * This is a private function, and cannot be called globally
 	 * because it is defined within a function call.
@@ -42,19 +43,21 @@
 	 * @constructor
 	 * @param element
 	 * @param options
+	 * @param uniqueid
 	 */
-	function Deckard( element, options ) {
+	function Deckard( element, options, uniqueid ) {
 		// This is a plain html DOM node, the container of the cards
 		this.element = element;
 		this.$oPack = $( element );
 
 		// Specific options for this instance
-		this.options = $.extend( {}, oDefaults, options ) ;
+		this.options = $.extend( {}, oDefaults, options );
 
 		this._defaults = oDefaults;
 		this._name = sPluginName;
 
 		this.sDefaultKard = '';
+		this.sId = uniqueid;
 		this.aKardStack = [];
 		this.oLoadData = {};
 		this.oLoadMethod = 'GET';
@@ -155,7 +158,16 @@
 					}
 				}
 			);
+
+			this.options.onAfterBroadcast.call( this );
 			return this;
+		};
+
+		/**
+		 * @returns {object}
+		 */
+		this.getActiveKard = function() {
+			return this.activeCard;
 		};
 
 		/**
@@ -163,6 +175,13 @@
 		 */
 		this.getDefaultKard = function () {
 			return this.sDefaultKard;
+		};
+
+		/**
+		 * @returns {string}
+		 */
+		this.getId = function() {
+			return this.sId;
 		};
 
 		/**
@@ -188,7 +207,10 @@
 
 			// todo: if the pack is empty and there is a default specified, use that
 
+			// Take a snapshot of information that we will need for the asynchronous functions
 			var oInstance = this;
+			var cOnLoadJson = this.options.onLoadJson;
+			var cOnAfterLoad = this.options.onAfterLoad;
 
 			if ( !bReload ) {
 				// Look for an already loaded card with the same URI
@@ -208,6 +230,7 @@
 
 			this.options.onMask.call( this, this.masked );
 			var sUrl = this.options.onTransformUrlComponent.call( this, sUrlComponent );
+			sUrl = sUrl + (sUrl.indexOf( '?' ) === -1? '?': '&') + sPluginName + '=' + this.getId();
 
 			var oRequest = {
 				'context': this,
@@ -227,8 +250,7 @@
 					}
 
 					if ( bIsJson ) {
-						// could do an onError handler
-						this.options.onLoadJson.call( this, jQuery.parseJSON( oData ) );
+						cOnLoadJson.call( this, jQuery.parseJSON( oData ) );
 					}
 					else {
 						var sCardContent = Utilities.extractScriptTags( oData );
@@ -238,7 +260,7 @@
 							sScript = "var oDeckard = $( 'div.deckard[data-deckard-uniqid=" + this.$oPack.attr('data-deckard-uniqid') + "]' ).data( 'plugin-deckard' );"
 							+ "\n" + sScript;
 						}
-	//
+
 						var $oNewKard = $( sCardContent );
 
 						// Find the actual "div.kard"'s within the new content
@@ -284,6 +306,8 @@
 						}
 						this.show( $oNewKard );
 					}
+
+					cOnAfterLoad.call( this );
 				},
 				'complete': function () {
 					this.options.onUnmask.call( this, this.masked );
@@ -328,6 +352,11 @@
 			return this;
 		};
 
+		this.resetEvents = function() {
+			this.options = $.extend( {}, oDefaults, options );
+			return this;
+		};
+
 		/**
 		 * @param sUrlComponent
 		 * @returns {Deckard}
@@ -349,6 +378,15 @@
 		};
 
 		/**
+		 * @param sId
+		 * @returns {Deckard}
+		 */
+		this.setId = function( sId ) {
+			this.sId = sId;
+			return this;
+		};
+
+		/**
 		 * @returns {Deckard}
 		 */
 		this.setLoadData = function( oLoadData ) {
@@ -361,7 +399,6 @@
 		 */
 		this.setLoadDataFromElement = function( $oElement ) {
 			this.oLoadData = $( '<form />' ).append( $oElement.clone() ).serializeArray();
-			console.log( this.oLoadData );
 			return this;
 		};
 
@@ -438,30 +475,35 @@
 	$.fn[sPluginName] = function ( sAction ) {
 		var aArguments = arguments;
 
-		var getId = (function () {
-			var incrementingId = 0;
-			//return function(element) {
-			return function() {
-
-				/*
-				if (!element.id) {
-					element.id = "id_" + incrementingId++;
-					// Possibly add a check if this ID really is unique
-				}
-				return element.id;
-				*/
-				return incrementingId++;
-			};
-		}());
+		var getId = (
+			function () {
+				var incrementingId = 1;
+				//return function(element) {
+				return function( prefix ) {
+					/*
+					if (!element.id) {
+						element.id = "id_" + incrementingId++;
+						// Possibly add a check if this ID really is unique
+					}
+					return element.id;
+					*/
+					return ''+prefix+(incrementingId++);
+				};
+			}()
+		);
 
 		return this.each(
 			function () {
 				// Restrict only one instance per element
 				if ( !$.data( this, 'plugin-' + sPluginName ) ) {
-					$.data( this, 'plugin-' + sPluginName, new Deckard( this, sAction ) );
+					var nInstanceId = getId( 'd' );
+					var oInstance = new Deckard( this, sAction, nInstanceId );
+
+					// Attach the instance as "data" to the element
+					$.data( this, 'plugin-' + sPluginName, oInstance );
 
 					// Create a unique deckard ID. This is so we can get holdof the element any time
-					$( this ).attr( 'data-deckard-uniqid', getId() );
+					$( this ).attr( 'data-deckard-uniqid', nInstanceId );
 				}
 				else {
 					var oInstance = $.data( this, 'plugin-' + sPluginName );
